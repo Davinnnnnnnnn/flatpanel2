@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>FlatPanel</title>
+<style>
+  :root{
+    --glow: 0;            /* 0~1, 원 크기에 따른 굴절광 세기 */
+    --accent: 0 0% 100%;  /* 흰색 단색 — 야간 시야 보호 */
+  }
+  *{ margin:0; padding:0; box-sizing:border-box;
+     -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
+  html,body{
+    width:100%; height:100%; background:#000; overflow:hidden;
+    touch-action:none; overscroll-behavior:none;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  }
+  #stage{ position:fixed; inset:0; background:#000; }
+
+  /* ── 중앙 흰 원 ── */
+  #circle{
+    position:absolute; top:50%; left:50%;
+    width:120px; height:120px; border-radius:50%;
+    transform:translate(-50%,-50%);
+    background:#fff;
+    will-change:width,height,background,box-shadow;
+  }
+
+  /* ── 컨트롤 패널 (배경 없음) ── */
+  #panel{ position:fixed; z-index:10; display:flex; align-items:center; gap:20px; }
+  /* 세로(기본): 하단 가로 패널 */
+  @media (orientation: portrait){
+    #panel{ left:28px; right:28px; bottom:40px; flex-direction:row; }
+    .slider{ flex:1; height:52px; }
+  }
+  /* 가로: 좌측 세로 패널 */
+  @media (orientation: landscape){
+    #panel{ top:28px; bottom:28px; left:40px; flex-direction:row; }
+    .slider{ width:44px; height:auto; align-self:stretch; }
+  }
+
+  /* ── 슬라이더: 가는 선 하나 ── */
+  .slider{ --f:1; position:relative; cursor:pointer; touch-action:none; }
+  .slider .thumb{ display:none; }            /* 썸 제거 */
+  /* 기본 선 (어둡게) */
+  .slider::before{ content:""; position:absolute; background:rgba(255,255,255,0.22); }
+  /* 채움 선 (밝게) = 현재 값 */
+  .fill{ position:absolute; background:#fff; }
+  /* 값 라벨 — 값 텍스트만 */
+  .label{ position:absolute; pointer-events:none; font-size:15px; font-weight:600;
+    color:#fff; text-shadow:0 1px 4px rgba(0,0,0,0.9);
+    left:50%; transform:translateX(-50%); bottom:0; white-space:nowrap; }
+
+  /* 세로: 선은 글씨 위에서 끝남 */
+  @media (orientation: portrait){
+    .slider::before{ left:0; right:0; bottom:24px; height:2px; }
+    .fill{ left:0; bottom:24px; height:2px; width:calc(var(--f)*100%); }
+  }
+  /* 가로: 글씨가 위, 선은 글씨 밑에서 시작 */
+  @media (orientation: landscape){
+    .slider::before{ top:24px; bottom:0; left:50%; width:2px; transform:translateX(-50%); }
+    .fill{ bottom:0; left:50%; width:2px; transform:translateX(-50%);
+           top:calc(24px + (1 - var(--f)) * (100% - 24px)); }
+    .label{ bottom:auto; top:0; }
+  }
+
+  /* ── 삼선 메뉴 버튼 (테두리 없이 우측 상단 고정) ── */
+  #menuBtn{ position:fixed; top:18px; right:18px; z-index:20;
+    width:40px; height:40px; padding:8px;
+    display:flex; flex-direction:column; justify-content:center; align-items:center; gap:5px;
+    background:none; border:none; box-shadow:none; cursor:pointer; }
+  #menuBtn span{ display:block; width:24px; height:2.5px; border-radius:2px;
+    background:rgba(255,255,255,0.9); }
+
+  /* ── 메뉴 드로어 ── */
+  #menu{ position:fixed; z-index:30; inset:0; display:none;
+    align-items:center; justify-content:center;
+    background:rgba(0,0,0,0.55); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
+  #menu.open{ display:flex; }
+  .sheet{ width:min(380px,84vw); max-height:82vh; overflow:auto;
+    padding:20px; border-radius:22px;
+    display:flex; flex-direction:column; gap:12px;
+    background:rgba(20,20,20,0.72);
+    border:1px solid rgba(255,255,255,0.16);
+    backdrop-filter:blur(26px); -webkit-backdrop-filter:blur(26px);
+    box-shadow:0 20px 60px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.25);
+    color:#fff; }
+  .row{ display:flex; gap:8px; align-items:center; }
+  .sheet input{ flex:1; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.2);
+    color:#fff; border-radius:12px; padding:11px 13px; font-size:15px; outline:none; }
+  .sheet input::placeholder{ color:rgba(255,255,255,0.4); }
+  .btn{ background:#fff; color:#000; border:none; border-radius:12px;
+    padding:11px 16px; font-size:14px; font-weight:700; cursor:pointer; white-space:nowrap; }
+  .btn.ghost{ background:rgba(255,255,255,0.1); color:#fff; }
+  .hint{ font-size:12px; opacity:.55; margin-top:6px; line-height:1.5; }
+  #presetList{ display:flex; flex-direction:column; gap:8px; }
+  #presetList:empty{ display:none; }
+  .preset{ display:flex; align-items:center; gap:10px; padding:12px 14px; border-radius:14px;
+    background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); }
+  .preset .pname{ flex:1; font-weight:600; }
+  .preset .pmeta{ font-size:12px; opacity:.6; }
+  .preset .del{ background:rgba(255,255,255,0.12); color:#fff; border:none; border-radius:9px;
+    width:32px; height:32px; font-size:18px; cursor:pointer; }
+  .closeRow{ margin-top:4px; }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <div id="circle"></div>
+  </div>
+
+  <div id="panel">
+    <div class="slider" id="brightSlider">
+      <div class="fill"></div><div class="thumb"></div>
+      <div class="label" id="brightLabel">밝기 100%</div>
+    </div>
+    <div class="slider" id="sizeSlider">
+      <div class="fill"></div><div class="thumb"></div>
+      <div class="label" id="sizeLabel">30.0 mm</div>
+    </div>
+    <div id="menuBtn"><span></span><span></span><span></span></div>
+  </div>
+
+  <div id="menu">
+    <div class="sheet">
+      <div class="row">
+        <input id="dpiInput" type="number" inputmode="numeric" min="50" max="1200" placeholder="DPI">
+        <button class="btn" id="dpiApply">적용</button>
+      </div>
+      <div class="row">
+        <input id="presetName" type="text" placeholder="프리셋 이름">
+        <button class="btn" id="presetSave">저장</button>
+      </div>
+      <div id="presetList"></div>
+      <div class="row closeRow">
+        <button class="btn ghost" id="menuClose" style="flex:1">닫기</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+  const LS = {
+    get:(k,d)=>{ try{ const v=localStorage.getItem(k); return v==null?d:JSON.parse(v);}catch(e){return d;} },
+    set:(k,v)=>{ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
+  };
+
+  const dpr = window.devicePixelRatio || 1;
+  // CSS px(레이아웃 단위) 당 mm 환산: 물리 device px = mm*dpi/25.4, CSS px = device px / dpr
+  let dpi = LS.get('fp_dpi', Math.round(96*dpr));
+  const cssPxPerMm = ()=> (dpi/25.4)/dpr;
+
+  const circle = document.getElementById('circle');
+  const stage  = document.getElementById('stage');
+
+  // 상태(목표값) — 부드러운 보간을 위해 target/current 분리
+  let target = { bright: LS.get('fp_bright',100), sizeMm: LS.get('fp_size',30) };
+  let cur    = { bright: target.bright, diam: target.sizeMm*cssPxPerMm() };
+
+  function maxMm(){
+    const minSide = Math.min(window.innerWidth, window.innerHeight);
+    return Math.max(10, Math.floor(minSide / cssPxPerMm()));
+  }
+
+  // ── 부드러운 애니메이션 루프 (lerp easing) ──
+  function frame(){
+    const tDiam = target.sizeMm*cssPxPerMm();
+    cur.diam   += (tDiam - cur.diam)*0.16;
+    cur.bright += (target.bright - cur.bright)*0.16;
+    if(Math.abs(tDiam-cur.diam)<0.2) cur.diam=tDiam;
+    if(Math.abs(target.bright-cur.bright)<0.1) cur.bright=target.bright;
+
+    const v = Math.round(cur.bright*2.55);
+    circle.style.width = circle.style.height = cur.diam+'px';
+    circle.style.background = `rgb(${v},${v},${v})`;
+    const glowR = cur.diam*0.18*(cur.bright/100);
+    circle.style.boxShadow = `0 0 ${glowR}px ${glowR*0.4}px rgba(255,255,255,${0.25*cur.bright/100})`;
+
+    // 굴절광 세기: 원 지름이 화면 최소변에 가까울수록 1
+    const g = Math.min(1, cur.diam / Math.min(window.innerWidth, window.innerHeight));
+    document.documentElement.style.setProperty('--glow', g.toFixed(3));
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ── 커스텀 슬라이더 (선 하나) ──
+  function makeSlider(id, opts){
+    const el=document.getElementById(id);
+    let val=opts.value;
+    const rect=()=>el.getBoundingClientRect();
+    const vertical=()=>{ const r=rect(); return r.height>r.width; };
+    function render(){
+      const f=(val-opts.min)/(opts.max-opts.min);
+      el.style.setProperty('--f', f);
+    }
+    function fromEvt(e){ const r=rect();
+      let f = vertical() ? 1-((e.clientY-r.top)/r.height) : (e.clientX-r.left)/r.width;
+      return Math.min(1,Math.max(0,f));
+    }
+    function setF(f){ val=opts.min+(opts.max-opts.min)*f; render(); opts.onInput(val); }
+    let drag=false;
+    el.addEventListener('pointerdown',e=>{ drag=true; el.setPointerCapture(e.pointerId); setF(fromEvt(e)); e.preventDefault(); });
+    el.addEventListener('pointermove',e=>{ if(drag){ setF(fromEvt(e)); e.preventDefault(); } });
+    const end=()=>{ drag=false; };
+    el.addEventListener('pointerup',end); el.addEventListener('pointercancel',end);
+    window.addEventListener('resize', render);
+    return { render, setVal(v){ val=Math.min(opts.max,Math.max(opts.min,v)); render(); opts.onInput(val); }, get max(){return opts.max;}, set max(m){opts.max=m;}, getVal(){return val;} };
+  }
+
+  const brightLabel=document.getElementById('brightLabel');
+  const sizeLabel=document.getElementById('sizeLabel');
+
+  const brightS = makeSlider('brightSlider',{min:0,max:100,value:target.bright,onInput:v=>{
+    target.bright=v; brightLabel.textContent=Math.round(v)+'%'; LS.set('fp_bright',v);
+  }});
+  const sizeS = makeSlider('sizeSlider',{min:5,max:maxMm(),value:target.sizeMm,onInput:v=>{
+    target.sizeMm=v; sizeLabel.textContent=Math.round(v)+'mm'; LS.set('fp_size',v);
+  }});
+  brightS.render(); sizeS.render();
+  brightLabel.textContent=Math.round(target.bright)+'%';
+  sizeLabel.textContent=Math.round(target.sizeMm)+'mm';
+
+  function refreshSizeRange(){
+    sizeS.max=maxMm();
+    if(target.sizeMm>sizeS.max){ target.sizeMm=sizeS.max; }
+    sizeS.setVal(target.sizeMm);
+  }
+  window.addEventListener('resize', refreshSizeRange);
+  window.addEventListener('orientationchange', ()=>setTimeout(refreshSizeRange,200));
+
+  // ── 메뉴 / DPI / 프리셋 ──
+  const menu=document.getElementById('menu');
+  document.getElementById('menuBtn').addEventListener('click',()=>{ dpiInput.value=dpi; menu.classList.add('open'); renderPresets(); });
+  document.getElementById('menuClose').addEventListener('click',()=>menu.classList.remove('open'));
+  menu.addEventListener('click',e=>{ if(e.target===menu) menu.classList.remove('open'); });
+
+  const dpiInput=document.getElementById('dpiInput');
+  document.getElementById('dpiApply').addEventListener('click',()=>{
+    const d=parseFloat(dpiInput.value);
+    if(d>=50 && d<=1200){ dpi=d; LS.set('fp_dpi',d); refreshSizeRange(); }
+  });
+
+  const presetList=document.getElementById('presetList');
+  const presetName=document.getElementById('presetName');
+  function getPresets(){ return LS.get('fp_presets',[]); }
+  function renderPresets(){
+    const ps=getPresets();
+    presetList.innerHTML='';
+    ps.forEach((p,i)=>{
+      const d=document.createElement('div'); d.className='preset';
+      d.innerHTML=`<div class="pname">${p.name}</div>
+        <div class="pmeta">${Math.round(p.bright)}% · ${p.sizeMm.toFixed(1)}mm</div>
+        <button class="del" data-i="${i}">×</button>`;
+      d.addEventListener('click',e=>{
+        if(e.target.classList.contains('del')) return;
+        applyPreset(p);
+      });
+      d.querySelector('.del').addEventListener('click',e=>{
+        e.stopPropagation(); const arr=getPresets(); arr.splice(i,1); LS.set('fp_presets',arr); renderPresets();
+      });
+      presetList.appendChild(d);
+    });
+  }
+  function applyPreset(p){
+    target.bright=p.bright; target.sizeMm=Math.min(p.sizeMm,maxMm());
+    brightS.setVal(target.bright); sizeS.setVal(target.sizeMm);
+    menu.classList.remove('open');
+  }
+  document.getElementById('presetSave').addEventListener('click',()=>{
+    const name=(presetName.value||'').trim()||('프리셋 '+(getPresets().length+1));
+    const arr=getPresets();
+    arr.push({name, bright:target.bright, sizeMm:target.sizeMm});
+    LS.set('fp_presets',arr); presetName.value=''; renderPresets();
+  });
+
+  // ── 슬라이더/메뉴 밖 터치 완전 무시 ──
+  document.addEventListener('touchmove',e=>{ e.preventDefault(); },{passive:false});
+  document.addEventListener('contextmenu',e=>e.preventDefault());
+  document.addEventListener('gesturestart',e=>e.preventDefault());
+  document.addEventListener('dblclick',e=>e.preventDefault());
+
+  // 서비스워커 (오프라인/설치)
+  if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+})();
+</script>
+</body>
+</html>
