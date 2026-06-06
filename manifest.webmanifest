@@ -1,10 +1,11 @@
 {
   "name": "FlatPanel",
   "short_name": "FlatPanel",
-  "description": "천체촬영용 플랫패널",
+  "description": "Astrophotography flat panel",
   "start_url": "index.html",
   "scope": "./",
   "display": "fullscreen",
+  "display_override": ["fullscreen"],
   "orientation": "any",
   "background_color": "#000000",
   "theme_color": "#000000",
